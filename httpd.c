@@ -4,7 +4,7 @@
 #include <sys/stat.h>
 
 //打印日志
-void print_log(char* error, int level)
+void print_log(char* error, int level, char* file, int line)
 {
 	time_t now; //当前时间戳
 	time(&now);
@@ -14,7 +14,7 @@ void print_log(char* error, int level)
 	const char* log_level[5] = {"SUCCESS", "NOTICE", "WARNING", "ERROR", "FATAL"};
 	int fd = open("log/httpd.log", O_CREAT|O_WRONLY|O_APPEND, S_IWUSR|S_IRUSR);
 	char buf[1024];
-	sprintf(buf, "[%s] %s\t\t%s\n", log_level[level], asctime(timenow), error);
+	sprintf(buf, "[%s] %s\t\t%s(%d): %s\n", log_level[level], asctime(timenow), file, line, error);
 	write(fd, buf, strlen(buf));
 	close(fd);
 }
@@ -22,7 +22,39 @@ void print_log(char* error, int level)
 //返回状态码
 static void status_code(int sock, int status)
 {
+	const char* reason;//状态码描述
+	switch(status)
+	{
+		case 400:
+			reason = "Bad Request";
+			break;
+		case 403:
+			reason = "Forbidden";
+			break;
+		case 404:
+			reason = "Not Found";
+			break;
+		case 500:
+			reason = "Internal Server Error";
+			break;
+		case 503:
+			reason = "Server Unavailable";
+			break;
+		default:
+			print_log("status code error", WARNING, __FILE__, __LINE__);
+			reason = "Internal Server Error";
+			break;
+	}
 
+	char buf[SIZE/8];
+	sprintf(buf, "HTTP/1.0 %d %s\r\n", status, reason);
+	send(sock, buf, strlen(buf), 0);
+	const char* head = "Content-Type: text/html\r\n";
+	send(sock, head, strlen(head), 0);
+	send(sock, "\r\n", 2, 0);
+	sprintf(buf, "<html><head><title>%d %s</title></head><body><h2><center>%d %s</center></h2><hr/></body></html>", 
+				status, reason, status, reason);
+	send(sock, buf, strlen(buf), 0);
 }
 
 static ssize_t read_line(int sock, char* buf, size_t size);
@@ -43,13 +75,13 @@ int startup(int port)
 	int sock = socket(AF_INET, SOCK_STREAM, 0);
 	if(sock < 0)
 	{
-		print_log(strerror(errno), FATAL);
+		print_log(strerror(errno), FATAL, __FILE__, __LINE__);
 		exit(1);
 	}
 
 	int opt = 1;
 	if(setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0)
-	  print_log(strerror(errno), WARNING);
+	  print_log(strerror(errno), WARNING, __FILE__, __LINE__);
 
 	struct sockaddr_in local;
 	local.sin_family = AF_INET;
@@ -58,17 +90,17 @@ int startup(int port)
 
 	if(bind(sock, (struct sockaddr*)&local, sizeof(local)) < 0)
 	{
-		print_log(strerror(errno), FATAL);
+		print_log(strerror(errno), FATAL, __FILE__, __LINE__);
 		exit(2);
 	}
 
 	if(listen(sock, 10) < 0)
 	{
-		print_log(strerror(errno), FATAL);
+		print_log(strerror(errno), FATAL, __FILE__, __LINE__);
 		exit(3);
 	}
 
-	print_log("listen success", SUCCESS);
+	print_log("listen success", SUCCESS, __FILE__, __LINE__);
 	return sock;
 }
 
@@ -130,7 +162,7 @@ static int exec_cgi(int sock, const char* method, const char* path, const char* 
 	if(socketpair(PF_LOCAL, SOCK_STREAM, 0, sv) < 0)
 	{
 		status_code(sock, 500);
-		print_log("socketpair", FATAL);
+		print_log("socketpair", FATAL, __FILE__, __LINE__);
 		return 4;
 	}
 
@@ -139,7 +171,7 @@ static int exec_cgi(int sock, const char* method, const char* path, const char* 
 	if(pid < 0)
 	{
 		status_code(sock, 500);
-		print_log("fork", FATAL);
+		print_log("fork", FATAL, __FILE__, __LINE__);
 		return 5;
 	}
 	else if(pid == 0) //child
@@ -168,7 +200,7 @@ static int exec_cgi(int sock, const char* method, const char* path, const char* 
 
 		//程序替换
 		execl(path, path, NULL);
-		print_log("execl is error", FATAL);
+		print_log("execl is error", FATAL, __FILE__, __LINE__);
 		exit(6);
 	}
 	else //father
@@ -180,11 +212,11 @@ static int exec_cgi(int sock, const char* method, const char* path, const char* 
 		{
 			//从消息正文读 可能buf存不下
 			if(recv(sock, buf, content_len, 0) < 0)
-			  print_log("recv failed", FATAL);
+			  print_log("recv failed", FATAL, __FILE__, __LINE__);
 
 			//写到管道
 			if(write(sv[0], buf, content_len) < 0)
-			  print_log("write failed", FATAL);
+			  print_log("write failed", FATAL, __FILE__, __LINE__);
 		}
 
 		//从管道读取内容发给sock
@@ -192,7 +224,7 @@ static int exec_cgi(int sock, const char* method, const char* path, const char* 
 		while((s = read(sv[0], buf, sizeof(buf))) > 0)
 		{
 			if(send(sock, buf, s, 0) < 0)
-			  print_log("send failed", FATAL);
+			  print_log("send failed", FATAL, __FILE__, __LINE__);
 		}
 
 		waitpid(-1, NULL, 0);
@@ -206,7 +238,7 @@ static int send_file(int sock, const char* path, ssize_t size)
 	int fd = open(path, O_RDONLY);
 	if(fd < 0)
 	{
-		print_log("open for read file failed", ERROR);
+		print_log("open for read file failed", ERROR, __FILE__, __LINE__);
 		status_code(sock, 404);
 		close(fd);
 		return -1;
@@ -217,7 +249,7 @@ static int send_file(int sock, const char* path, ssize_t size)
 
 	if(sendfile(sock, fd, NULL, size) < 0)
 	{
-		print_log("sendfile failed", ERROR);
+		print_log("sendfile failed", ERROR, __FILE__, __LINE__);
 		status_code(sock, 404);
 		close(fd);
 		return -2;
@@ -244,7 +276,7 @@ int request_handle(int sock)
 	{
 		clear_header(sock); //读取失败清理掉header
 		status_code(sock, 400);
-		print_log("request error", ERROR);
+		print_log("request error", ERROR, __FILE__, __LINE__);
 		ret = 1;
 	}
 
@@ -283,7 +315,7 @@ int request_handle(int sock)
 	{
 		clear_header(sock);
 		status_code(sock, 400);
-		print_log("请求方法未知", WARNING);
+		print_log("请求方法未知", WARNING, __FILE__, __LINE__);
 		ret = 2;
 	}
 
@@ -298,7 +330,6 @@ int request_handle(int sock)
 	{
 		clear_header(sock);
 		status_code(sock, 404);
-		print_log("path不存在", WARNING);
 		ret = 3;
 		goto END;
 	}
