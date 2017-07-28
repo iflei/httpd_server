@@ -1,5 +1,4 @@
 #!/bin/bash
-cd cgi;make;cd -
 make;make install
 PWD=`pwd`
 mysql_lib=${PWD}/sql_conn/lib

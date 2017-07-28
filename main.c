@@ -37,7 +37,7 @@ int main(int argc, char* argv[])
 		int conn_sock = accept(listen_sock, (struct sockaddr*)&remote, &len);
 		if(conn_sock < 0)
 		{
-			print_log(strerror(errno), WARNING);
+			print_log(strerror(errno), WARNING, __FILE__, __LINE__);
 			continue;
 		}
 		//printf("New Connection! %s:%d\n", inet_ntoa(remote.sin_addr), ntohs(remote.sin_port));
@@ -45,7 +45,7 @@ int main(int argc, char* argv[])
 		pthread_t id;
 		if(pthread_create(&id, NULL, accept_request, (void*)conn_sock) != 0)
 		{
-			print_log(strerror(errno), FATAL);
+			print_log(strerror(errno), FATAL, __FILE__, __LINE__);
 			close(conn_sock);
 		}
 	}
