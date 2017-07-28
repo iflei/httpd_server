@@ -24,6 +24,7 @@ clean:
 install: 
 	@cd cgi;make;
 	@cd sql_cgi; make;
+	@mkdir -p $(WWWROOT)/cgi-bin
 	@mkdir -p $(RELEASE)
 	@cp $(ROOTPATH)/sql_cgi/proxy_ip $(WWWROOT)/cgi-bin
 	@cp $(ROOTPATH)/cgi/calculator $(WWWROOT)/cgi-bin
