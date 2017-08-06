@@ -4,7 +4,7 @@
 
 void* accept_request(void* arg)
 {
-	int sock = (int)arg;
+	long long sock = (long long)arg;
 	//线程分离,无需主线程等待
 	//pthread_detach(pthread_self()); //线程池不需要线程退出
 	return (void*)request_handle(sock);

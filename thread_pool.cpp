@@ -41,7 +41,7 @@ int tpool_create(int max_thr_num)
 {
     int i;
  
-    tpool = calloc(1, sizeof(tpool_t));
+    tpool = (tpool_t*)calloc(1, sizeof(tpool_t));
     if (!tpool) {
         printf("%s: calloc failed\n", __FUNCTION__);
         exit(1);
@@ -63,7 +63,7 @@ int tpool_create(int max_thr_num)
     }
     
     /* 创建工作者线程 */
-    tpool->thr_id = calloc(max_thr_num, sizeof(pthread_t));
+    tpool->thr_id = (pthread_t*)calloc(max_thr_num, sizeof(pthread_t));
     if (!tpool->thr_id) {
         printf("%s: calloc failed\n", __FUNCTION__);
         exit(1);
@@ -122,7 +122,7 @@ int tpool_add_work(void*(*routine)(void*), void *arg)
         return -1;
     }
     
-    work = malloc(sizeof(tpool_work_t));
+    work = (tpool_work_t*)malloc(sizeof(tpool_work_t));
     if (!work) {
         printf("%s:malloc failed\n", __FUNCTION__);
         return -1;

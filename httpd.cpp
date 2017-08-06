@@ -59,14 +59,24 @@ static void status_code(int sock, int status)
 
 static ssize_t read_line(int sock, char* buf, size_t size);
 //清除消息报头
+//static void clear_header(int sock)
+//{
+//	char buf[SIZE];
+//	ssize_t size = 0;
+//
+//	do{
+//		size = read_line(sock, buf, SIZE);
+//	}while(size != 1 || strcmp(buf, "\n") != 0);
+//}
+
 static void clear_header(int sock)
 {
+	int numchars = 1;
 	char buf[SIZE];
-	ssize_t size = 0;
 
-	do{
-		size = read_line(sock, buf, SIZE);
-	}while(size != 1 || strcmp(buf, "\n") != 0);
+	buf[0] = 'A'; buf[1] = '\0';
+	while ((numchars > 0) && strcmp("\n", buf))  /* read & discard headers */
+		numchars = read_line(sock, buf, sizeof(buf));
 }
 
 //启动服务
@@ -105,27 +115,57 @@ int startup(int port)
 }
 
 //读取请求行报头行
-static ssize_t read_line(int sock, char* buf, size_t size)
+//static ssize_t read_line(int sock, char* buf, size_t size)
+//{
+//	ssize_t i = 0; //ret
+//	ssize_t s = 0; //recv ret
+//	char c = 0;
+//
+//	while(i < size - 1 && c != '\n')
+//	{
+//		s = recv(sock, &c, 1, 0);
+//		//  \r和\r\n -> \n
+//		if(s > 0 && c == '\r')
+//		{
+//			s = recv(sock, &c, 1, MSG_PEEK);
+//			if(s > 0 && c == '\n')
+//			  recv(sock, &c, 1, 0);
+//			else
+//			  c = '\n';
+//		}
+//		buf[i++] = c;
+//	}
+//
+//	buf[i] = '\0';
+//	return i;
+//}
+
+static ssize_t read_line(int sock, char *buf, size_t len)
 {
-	ssize_t i = 0; //ret
-	ssize_t s = 0; //recv ret
-	char c = 0;
+	ssize_t i = 0;
+	char c = '\0';
+	ssize_t n;
 
-	while(i < size - 1 && c != '\n')
+	while ((i < len - 1) && (c != '\n'))
 	{
-		s = recv(sock, &c, 1, 0);
-		//  \r和\r\n -> \n
-		if(s > 0 && c == '\r')
-		{
-			s = recv(sock, &c, 1, MSG_PEEK);
-			if(s > 0 && c == '\n')
-			  recv(sock, &c, 1, 0);
-			else
-			  c = '\n';
+		n = recv(sock, &c, 1, 0);
+		if (n > 0)
+		 {
+			 // Window:\r\n  Linux:\n  Mac:\r
+			if (c == '\r') 
+			{
+				n = recv(sock, &c, 1, MSG_PEEK);
+				if ((n > 0) && (c == '\n'))
+					recv(sock, &c, 1, 0);
+				else
+					c = '\n';
+			}
+			buf[i++] = c;
 		}
-		buf[i++] = c;
+		else
+			c = '\n';  //接收失败，直接跳出循环。
 	}
-
+	
 	buf[i] = '\0';
 	return i;
 }
@@ -180,8 +220,9 @@ static int exec_cgi(int sock, const char* method, const char* path, const char* 
 		close(sock);
 		close(sv[0]);
 		//文件描述符重定向
-		dup2(sv[1], 1);
 		dup2(sv[1], 0);
+		dup2(sv[1], 1);
+		dup2(sv[1], 2); //处理错误信息要用
 		//环境变量传递参数
 		//1.方便解析字符串2.传送数据量少3.exec后的进程仍然可以看到
 		sprintf(method_env, "METHOD=%s", method);
@@ -276,7 +317,7 @@ int request_handle(int sock)
 	{
 		clear_header(sock); //读取失败清理掉header
 		status_code(sock, 400);
-		print_log("request error", ERROR, __FILE__, __LINE__);
+		print_log("request error", ERROR, __FILE__, __LINE__);//log error
 		ret = 1;
 	}
 
@@ -315,7 +356,7 @@ int request_handle(int sock)
 	{
 		clear_header(sock);
 		status_code(sock, 400);
-		print_log("请求方法未知", WARNING, __FILE__, __LINE__);
+		print_log("请求方法未知", WARNING, __FILE__, __LINE__); //log error
 		ret = 2;
 	}
 
