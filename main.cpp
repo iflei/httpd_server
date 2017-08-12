@@ -12,8 +12,7 @@ void* accept_request(void* arg)
 
 int main(int argc, char* argv[])
 {
-	//先从配置文件读
-	
+	signal(SIGPIPE, SIG_IGN);
 	int listen_sock;
 	if(argc == 2)
 	  listen_sock = startup(atoi(argv[1]));

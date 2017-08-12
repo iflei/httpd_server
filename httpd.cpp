@@ -48,36 +48,44 @@ static void status_code(int sock, int status)
 
 	char buf[SIZE/8];
 	sprintf(buf, "HTTP/1.0 %d %s\r\n", status, reason);
-	send(sock, buf, strlen(buf), 0);
+	if(send(sock, buf, strlen(buf), 0) < 0)
+	{
+		print_log(strerror(errno), FATAL, __FILE__, __LINE__);
+		return;
+	}
 	const char* head = "Content-Type: text/html\r\n";
 	send(sock, head, strlen(head), 0);
+	{
+		print_log(strerror(errno), FATAL, __FILE__, __LINE__);
+		return;
+	}
 	send(sock, "\r\n", 2, 0);
+	{
+		print_log(strerror(errno), FATAL, __FILE__, __LINE__);
+		return;
+	}
 	sprintf(buf, "<html><head><title>%d %s</title></head><body><h2><center>%d %s</center></h2><hr/></body></html>", 
 				status, reason, status, reason);
 	send(sock, buf, strlen(buf), 0);
+	{
+		print_log(strerror(errno), FATAL, __FILE__, __LINE__);
+		return;
+	}
 }
 
 static ssize_t read_line(int sock, char* buf, size_t size);
 //清除消息报头
-//static void clear_header(int sock)
-//{
-//	char buf[SIZE];
-//	ssize_t size = 0;
-//
-//	do{
-//		size = read_line(sock, buf, SIZE);
-//	}while(size != 1 || strcmp(buf, "\n") != 0);
-//}
-
 static void clear_header(int sock)
 {
-	int numchars = 1;
 	char buf[SIZE];
+	ssize_t size = 0;
 
-	buf[0] = 'A'; buf[1] = '\0';
-	while ((numchars > 0) && strcmp("\n", buf))  /* read & discard headers */
-		numchars = read_line(sock, buf, sizeof(buf));
+	do{
+		size = read_line(sock, buf, SIZE);
+	}while(size > 0 && strcmp("\n", buf));
+	//while(size > 1 || strcmp(buf, "\n")); // bug:没读到\n就一直读有bug，可能请求头里没\n
 }
+
 
 //启动服务
 int startup(int port)
@@ -115,31 +123,6 @@ int startup(int port)
 }
 
 //读取请求行报头行
-//static ssize_t read_line(int sock, char* buf, size_t size)
-//{
-//	ssize_t i = 0; //ret
-//	ssize_t s = 0; //recv ret
-//	char c = 0;
-//
-//	while(i < size - 1 && c != '\n')
-//	{
-//		s = recv(sock, &c, 1, 0);
-//		//  \r和\r\n -> \n
-//		if(s > 0 && c == '\r')
-//		{
-//			s = recv(sock, &c, 1, MSG_PEEK);
-//			if(s > 0 && c == '\n')
-//			  recv(sock, &c, 1, 0);
-//			else
-//			  c = '\n';
-//		}
-//		buf[i++] = c;
-//	}
-//
-//	buf[i] = '\0';
-//	return i;
-//}
-
 static ssize_t read_line(int sock, char *buf, size_t len)
 {
 	ssize_t i = 0;
@@ -162,8 +145,15 @@ static ssize_t read_line(int sock, char *buf, size_t len)
 			}
 			buf[i++] = c;
 		}
+		else if(n == 0)
+		{
+			break;  //接收失败,直接跳出循环
+		}
 		else
-			c = '\n';  //接收失败，直接跳出循环。
+		{
+			print_log(strerror(errno), FATAL, __FILE__, __LINE__);
+			return -1;
+		}
 	}
 	
 	buf[i] = '\0';
@@ -182,7 +172,7 @@ static int exec_cgi(int sock, const char* method, const char* path, const char* 
 	if(strcasecmp(method, "GET")  == 0)
 	  clear_header(sock);
 	else //POST
-		while(read_line(sock, buf, sizeof(buf)) != 1)
+		while(read_line(sock, buf, sizeof(buf)) > 1)
 			if(strncasecmp(buf, "Content-Length: ", 16) == 0)
 			{
 				content_len = atoi(buf+16);
@@ -192,7 +182,11 @@ static int exec_cgi(int sock, const char* method, const char* path, const char* 
 
 	//发送应答头部
 	const char* respond_line = "HTTP/1.0 200 OK\r\n";
-	send(sock, respond_line, strlen(respond_line), 0);
+	if(send(sock, respond_line, strlen(respond_line), 0) < 0)
+	{
+		print_log(strerror(errno), FATAL, __FILE__, __LINE__);
+		return 1;
+	}
 	const char* content_type = "Content-Type: text/html;charset=UTF-8\r\n";
 	send(sock, content_type, strlen(content_type), 0);
 	send(sock, "\r\n", 2, 0);
@@ -202,7 +196,7 @@ static int exec_cgi(int sock, const char* method, const char* path, const char* 
 	if(socketpair(PF_LOCAL, SOCK_STREAM, 0, sv) < 0)
 	{
 		status_code(sock, 500);
-		print_log("socketpair", FATAL, __FILE__, __LINE__);
+		print_log(strerror(errno), FATAL, __FILE__, __LINE__);
 		return 4;
 	}
 
@@ -211,7 +205,7 @@ static int exec_cgi(int sock, const char* method, const char* path, const char* 
 	if(pid < 0)
 	{
 		status_code(sock, 500);
-		print_log("fork", FATAL, __FILE__, __LINE__);
+		print_log(strerror(errno), FATAL, __FILE__, __LINE__);
 		return 5;
 	}
 	else if(pid == 0) //child
@@ -265,7 +259,7 @@ static int exec_cgi(int sock, const char* method, const char* path, const char* 
 		while((s = read(sv[0], buf, sizeof(buf))) > 0)
 		{
 			if(send(sock, buf, s, 0) < 0)
-			  print_log("send failed", FATAL, __FILE__, __LINE__);
+				print_log(strerror(errno), FATAL, __FILE__, __LINE__);
 		}
 
 		waitpid(-1, NULL, 0);
@@ -279,27 +273,36 @@ static int send_file(int sock, const char* path, ssize_t size)
 	int fd = open(path, O_RDONLY);
 	if(fd < 0)
 	{
-		print_log("open for read file failed", ERROR, __FILE__, __LINE__);
+		print_log(strerror(errno), ERROR, __FILE__, __LINE__);
 		status_code(sock, 404);
 		close(fd);
 		return -1;
 	}
 
-	send(sock, "HTTP/1.0 200 OK\r\n", 17, 0);
-	send(sock, "\r\n", 2, 0);
+	if(send(sock, "HTTP/1.0 200 OK\r\n", 17, 0) < 0)
+	{
+		print_log(strerror(errno), ERROR, __FILE__, __LINE__);
+		close(fd);
+		return -2;
+	}
+
+	if(send(sock, "\r\n", 2, 0) < 0) //bug:挂在第二次send
+	{
+		print_log(strerror(errno), ERROR, __FILE__, __LINE__);
+		close(fd);
+		return -3;
+	}
 
 	if(sendfile(sock, fd, NULL, size) < 0)
 	{
-		print_log("sendfile failed", ERROR, __FILE__, __LINE__);
-		status_code(sock, 404);
+		print_log(strerror(errno), ERROR, __FILE__, __LINE__);
 		close(fd);
-		return -2;
+		return -4;
 	}
 
 	close(fd);
 	return 0;
 }
-
 
 int request_handle(int sock)
 {	
@@ -313,12 +316,11 @@ int request_handle(int sock)
 	int ret = 0;
 
 	ssize_t size = read_line(sock, line, sizeof(line));//读一行
-	if(size == 0)
+	if(size <= 0)
 	{
-		clear_header(sock); //读取失败清理掉header
-		status_code(sock, 400);
-		print_log("request error", ERROR, __FILE__, __LINE__);//log error
-		ret = 1;
+		print_log("request error", ERROR, __FILE__, __LINE__);
+		close(sock);
+		return 1;
 	}
 
 	//读取到第一行，获取请求方法
@@ -356,8 +358,9 @@ int request_handle(int sock)
 	{
 		clear_header(sock);
 		status_code(sock, 400);
-		print_log("请求方法未知", WARNING, __FILE__, __LINE__); //log error
+		print_log("Unknown request method", WARNING, __FILE__, __LINE__); 
 		ret = 2;
+		goto END;
 	}
 
 	//处理请求路径
