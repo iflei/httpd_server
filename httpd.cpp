@@ -182,14 +182,22 @@ static int exec_cgi(int sock, const char* method, const char* path, const char* 
 
 	//发送应答头部
 	const char* respond_line = "HTTP/1.0 200 OK\r\n";
-	if(send(sock, respond_line, strlen(respond_line), 0) < 0)
+	if(send(sock, respond_line, strlen(respond_line), 0) <= 0)
 	{
 		print_log(strerror(errno), FATAL, __FILE__, __LINE__);
 		return 1;
 	}
 	const char* content_type = "Content-Type: text/html;charset=UTF-8\r\n";
-	send(sock, content_type, strlen(content_type), 0);
-	send(sock, "\r\n", 2, 0);
+	if(send(sock, content_type, strlen(content_type), 0) <= 0)
+	{
+		print_log(strerror(errno), FATAL, __FILE__, __LINE__);
+		return 2;
+	}
+	if(send(sock, "\r\n", 2, 0) <= 0)
+	{
+		print_log(strerror(errno), FATAL, __FILE__, __LINE__);
+		return 3;
+	}
 
 	//socketpair进行双向通信
 	int sv[2];
@@ -279,21 +287,21 @@ static int send_file(int sock, const char* path, ssize_t size)
 		return -1;
 	}
 
-	if(send(sock, "HTTP/1.0 200 OK\r\n", 17, 0) < 0)
+	if(send(sock, "HTTP/1.0 200 OK\r\n", 17, 0) <= 0)
 	{
 		print_log(strerror(errno), ERROR, __FILE__, __LINE__);
 		close(fd);
 		return -2;
 	}
 
-	if(send(sock, "\r\n", 2, 0) < 0) //bug:挂在第二次send
+	if(send(sock, "\r\n", 2, 0) <= 0) //bug:挂在第二次send
 	{
 		print_log(strerror(errno), ERROR, __FILE__, __LINE__);
 		close(fd);
 		return -3;
 	}
 
-	if(sendfile(sock, fd, NULL, size) < 0)
+	if(sendfile(sock, fd, NULL, size) <= 0)
 	{
 		print_log(strerror(errno), ERROR, __FILE__, __LINE__);
 		close(fd);
