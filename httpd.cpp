@@ -54,19 +54,19 @@ static void status_code(int sock, int status)
 		return;
 	}
 	const char* head = "Content-Type: text/html\r\n";
-	send(sock, head, strlen(head), 0);
+	if(send(sock, head, strlen(head), 0) <0 )
 	{
 		print_log(strerror(errno), FATAL, __FILE__, __LINE__);
 		return;
 	}
-	send(sock, "\r\n", 2, 0);
+	if(send(sock, "\r\n", 2, 0) < 0)
 	{
 		print_log(strerror(errno), FATAL, __FILE__, __LINE__);
 		return;
 	}
 	sprintf(buf, "<html><head><title>%d %s</title></head><body><h2><center>%d %s</center></h2><hr/></body></html>", 
 				status, reason, status, reason);
-	send(sock, buf, strlen(buf), 0);
+	if(send(sock, buf, strlen(buf), 0) < 0)
 	{
 		print_log(strerror(errno), FATAL, __FILE__, __LINE__);
 		return;
